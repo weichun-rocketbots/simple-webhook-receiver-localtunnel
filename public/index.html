@@ -131,16 +131,14 @@
         <h1>🪝 Webhook Receiver</h1>
         <p class="subtitle">Your webhook URL: <span id="webhookUrl"></span>/webhook</p>
         <button class="refresh-btn" onclick="loadWebhooks()">Refresh</button>
-        <label class="auto-refresh">
-          <input type="checkbox" id="autoRefresh" checked> Auto-refresh (3s)
-        </label>
+        <span id="connectionStatus" style="margin-left: 10px; color: #6c757d;">🔌 Connecting...</span>
       </div>
       <div id="webhooks">
         <div class="no-webhooks">Loading webhooks...</div>
       </div>
     </div>
     <script>
-      let autoRefreshInterval;
+      let ws;
       let expandedWebhooks = new Set();
 
       function toggleWebhook(id) {
@@ -163,82 +161,128 @@
           }
       }
 
+      function renderWebhooks(data) {
+          const container = document.getElementById('webhooks');
+
+          if (data.length === 0) {
+              container.innerHTML = '<div class="no-webhooks">No webhooks received yet. Send a webhook to see it here!</div>';
+              return;
+          }
+
+          container.innerHTML = data.map(webhook => `
+              <div class="webhook-item">
+                  <div class="webhook-header" onclick="toggleWebhook('${webhook.id}')">
+                      <span class="method ${webhook.method}">${webhook.method}</span>
+                      <span class="timestamp">${new Date(webhook.timestamp).toLocaleString()}</span>
+                      <span style="float: right; color: #6c757d;">IP: ${webhook.ip}</span>
+                  </div>
+                  <div id="details-${webhook.id}" class="webhook-details">
+                      <div class="section-title">URL:</div>
+                      <div class="code-block">${webhook.method} ${webhook.url}</div>
+
+                      <div class="section-title">Headers:</div>
+                      <div class="code-block">${formatJson(webhook.headers)}</div>
+
+                      <div class="section-title">Body:</div>
+                      <div class="code-block">${formatJson(webhook.body)}</div>
+
+                      <div class="section-title">Query Parameters:</div>
+                      <div class="code-block">${formatJson(webhook.query)}</div>
+                  </div>
+              </div>
+          `).join('');
+
+          // Restore expanded state
+          expandedWebhooks.forEach(id => {
+              const details = document.getElementById(`details-${id}`);
+              if (details) {
+                  details.classList.add('active');
+              }
+          });
+      }
+
       function loadWebhooks() {
           fetch('/api/webhooks')
               .then(response => response.json())
-              .then(data => {
-                  const container = document.getElementById('webhooks');
-
-                  if (data.length === 0) {
-                      container.innerHTML = '<div class="no-webhooks">No webhooks received yet. Send a webhook to see it here!</div>';
-                      return;
-                  }
-
-                  container.innerHTML = data.map(webhook => `
-                      <div class="webhook-item">
-                          <div class="webhook-header" onclick="toggleWebhook('${webhook.id}')">
-                              <span class="method ${webhook.method}">${webhook.method}</span>
-                              <span class="timestamp">${new Date(webhook.timestamp).toLocaleString()}</span>
-                              <span style="float: right; color: #6c757d;">IP: ${webhook.ip}</span>
-                          </div>
-                          <div id="details-${webhook.id}" class="webhook-details">
-                              <div class="section-title">URL:</div>
-                              <div class="code-block">${webhook.method} ${webhook.url}</div>
-
-                              <div class="section-title">Headers:</div>
-                              <div class="code-block">${formatJson(webhook.headers)}</div>
-
-                              <div class="section-title">Body:</div>
-                              <div class="code-block">${formatJson(webhook.body)}</div>
-
-                              <div class="section-title">Query Parameters:</div>
-                              <div class="code-block">${formatJson(webhook.query)}</div>
-                          </div>
-                      </div>
-                  `).join('');
-
-                  // Restore expanded state
-                  expandedWebhooks.forEach(id => {
-                      const details = document.getElementById(`details-${id}`);
-                      if (details) {
-                          details.classList.add('active');
-                      }
-                  });
-              })
+              .then(data => renderWebhooks(data))
               .catch(error => {
                   console.error('Error loading webhooks:', error);
                   document.getElementById('webhooks').innerHTML = '<div class="no-webhooks">Error loading webhooks. Please try again.</div>';
               });
       }
 
-      function startAutoRefresh() {
-          if (document.getElementById('autoRefresh').checked) {
-              autoRefreshInterval = setInterval(loadWebhooks, 3000);
-          }
-      }
+      function connectWebSocket() {
+          const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+          const wsUrl = `${protocol}//${window.location.host}`;
+          
+          ws = new WebSocket(wsUrl);
+          
+          ws.onopen = function() {
+              console.log('WebSocket connected');
+              document.getElementById('connectionStatus').textContent = '🔌 Connected';
+              document.getElementById('connectionStatus').style.color = '#28a745';
+          };
+          
+          ws.onmessage = function(event) {
+              const message = JSON.parse(event.data);
+              if (message.type === 'initial') {
+                  renderWebhooks(message.data);
+              } else if (message.type === 'webhook') {
+                  // Prepend new webhook to current list
+                  const container = document.getElementById('webhooks');
+                  const currentHtml = container.innerHTML;
+                  const newWebhookHtml = `
+                      <div class="webhook-item">
+                          <div class="webhook-header" onclick="toggleWebhook('${message.data.id}')">
+                              <span class="method ${message.data.method}">${message.data.method}</span>
+                              <span class="timestamp">${new Date(message.data.timestamp).toLocaleString()}</span>
+                              <span style="float: right; color: #6c757d;">IP: ${message.data.ip}</span>
+                          </div>
+                          <div id="details-${message.data.id}" class="webhook-details">
+                              <div class="section-title">URL:</div>
+                              <div class="code-block">${message.data.method} ${message.data.url}</div>
 
-      function stopAutoRefresh() {
-          if (autoRefreshInterval) {
-              clearInterval(autoRefreshInterval);
-              autoRefreshInterval = null;
-          }
+                              <div class="section-title">Headers:</div>
+                              <div class="code-block">${formatJson(message.data.headers)}</div>
+
+                              <div class="section-title">Body:</div>
+                              <div class="code-block">${formatJson(message.data.body)}</div>
+
+                              <div class="section-title">Query Parameters:</div>
+                              <div class="code-block">${formatJson(message.data.query)}</div>
+                          </div>
+                      </div>
+                  `;
+                  
+                  if (currentHtml.includes('No webhooks received yet')) {
+                      container.innerHTML = newWebhookHtml;
+                  } else {
+                      container.innerHTML = newWebhookHtml + currentHtml;
+                  }
+              }
+          };
+          
+          ws.onclose = function() {
+              console.log('WebSocket disconnected');
+              document.getElementById('connectionStatus').textContent = '🔌 Disconnected';
+              document.getElementById('connectionStatus').style.color = '#dc3545';
+              // Attempt to reconnect after 3 seconds
+              setTimeout(connectWebSocket, 3000);
+          };
+          
+          ws.onerror = function(error) {
+              console.error('WebSocket error:', error);
+              document.getElementById('connectionStatus').textContent = '🔌 Error';
+              document.getElementById('connectionStatus').style.color = '#dc3545';
+          };
       }
 
       // Show current webhook URL
       document.getElementById('webhookUrl').textContent = window.location.origin;
 
-      // Auto-refresh toggle
-      document.getElementById('autoRefresh').addEventListener('change', function() {
-          if (this.checked) {
-              startAutoRefresh();
-          } else {
-              stopAutoRefresh();
-          }
-      });
-
-      // Initial load and start auto-refresh
+      // Initial load and connect WebSocket
       loadWebhooks();
-      startAutoRefresh();
+      connectWebSocket();
     </script>
   </body>
 </html>

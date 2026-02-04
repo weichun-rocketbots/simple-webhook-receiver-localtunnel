@@ -4,6 +4,7 @@ const bodyParser = require('body-parser');
 const path = require('path');
 const fs = require('fs').promises;
 const { exec } = require('child_process');
+const WebSocket = require('ws');
 
 const app = express();
 const PORT = process.env.PORT || 8080;
@@ -87,6 +88,9 @@ app.post('/webhook', async (req, res) => {
   // Save to file for persistence (async, don't wait)
   saveWebhookToFile(webhook);
 
+  // Broadcast to WebSocket clients
+  broadcastWebhook(webhook);
+
   console.log(`Received webhook at ${timestamp}`);
   console.log(`Headers: ${JSON.stringify(req.headers, null, 2)}`);
   if (!req.body) {
@@ -112,6 +116,30 @@ const server = app.listen(PORT, async () => {
   // Load existing webhooks from file on startup
   await loadWebhooksFromFile();
 });
+
+// WebSocket server for real-time updates
+const wss = new WebSocket.Server({ server });
+
+wss.on('connection', (ws) => {
+  console.log('Client connected to WebSocket');
+
+  // Send current webhooks to newly connected client
+  ws.send(JSON.stringify({ type: 'initial', data: webhooks }));
+
+  ws.on('close', () => {
+    console.log('Client disconnected from WebSocket');
+  });
+});
+
+// Broadcast webhook to all connected clients
+function broadcastWebhook(webhook) {
+  const message = JSON.stringify({ type: 'webhook', data: webhook });
+  wss.clients.forEach((client) => {
+    if (client.readyState === WebSocket.OPEN) {
+      client.send(message);
+    }
+  });
+}
 
 let tunnel = null;
 let shuttingDown = false;
