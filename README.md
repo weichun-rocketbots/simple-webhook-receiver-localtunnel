@@ -1,44 +1,65 @@
-# Webhook Server
+# 🪝 Webhook Server
 
-A Node.js Express server that receives webhook payloads and provides a public tunnel endpoint using LocalTunnel.
+A Node.js Express server with a web dashboard for receiving, storing, and visualizing webhook payloads. Features automatic public tunneling via LocalTunnel and persistent webhook storage.
 
-## Features
+## ✨ Features
 
-- **Webhook Receiver**: Accepts POST requests at `/webhook` and logs payload details
-- **Health Check**: GET endpoint at `/health` for service monitoring
+- **Webhook Receiver**: Accepts POST/PUT/GET/DELETE requests and captures complete request data
+- **Web Dashboard**: Real-time web interface to view webhook history with expandable details
+- **Persistent Storage**: Saves webhooks to JSONL file with configurable retention limits
 - **Public Tunnel**: Automatic LocalTunnel setup with reconnection logic and backoff retry
-- **Graceful Shutdown**: Handles SIGINT/SIGTERM signals properly
+- **Auto-refresh Dashboard**: 3-second auto-refresh with manual refresh option
+- **Request Details**: Captures headers, body, query parameters, IP address, and timestamps
+- **Graceful Shutdown**: Proper handling of SIGINT/SIGTERM signals
+- **Browser Auto-open**: Automatically opens dashboard when tunnel is established
 
-## Installation
+## 🚀 Quick Start
 
+### Installation
 ```bash
 npm install
 ```
 
-## Usage
-
-### Development
+### Running the Server
 ```bash
+# Development (with auto-restart)
 npm run dev
-```
 
-### Production
-```bash
+# Production
 npm start
 ```
 
-## API Endpoints
+The server will:
+1. Start on port 8080 (or `PORT` environment variable)
+2. Create a public tunnel at `https://respondio.loca.lt`
+3. Auto-open the webhook dashboard in your browser
+4. Display your webhook URL: `https://respondio.loca.lt/webhook`
 
-### POST /webhook
-Receives webhook payloads and logs them to the console.
+## 📡 API Endpoints
 
-**Request Body**: JSON payload
-**Response**: 
+### POST/PUT/GET/DELETE /webhook
+Receives webhook payloads and stores them for viewing in the dashboard.
+
+**Request**: Any JSON payload with headers
+**Response**:
 ```json
 {
   "message": "Webhook received"
 }
 ```
+
+**Captured Data**:
+- Complete request headers
+- Request body (JSON parsed)
+- Query parameters
+- Request method and URL
+- Client IP address
+- Timestamp
+
+### GET /api/webhooks
+Returns the list of stored webhooks (used by the dashboard).
+
+**Response**: Array of webhook objects
 
 ### GET /health
 Health check endpoint for monitoring.
@@ -51,55 +72,114 @@ Health check endpoint for monitoring.
 }
 ```
 
-## Configuration
+### GET /
+Web dashboard for viewing webhook history in real-time.
 
-The server uses the following environment variables:
+## 🌐 Web Dashboard
 
+The dashboard provides:
+- **Real-time Updates**: Auto-refreshes every 3 seconds
+- **Expandable Details**: Click any webhook to see full headers, body, and query params
+- **Request Metadata**: View method, timestamp, and client IP
+- **Syntax Highlighting**: Formatted JSON display for better readability
+- **Responsive Design**: Works on desktop and mobile devices
+
+## ⚙️ Configuration
+
+### Environment Variables
 - `PORT`: Server port (default: 8080)
-- Tunnel subdomain is hardcoded as 'respondio' in app.js:57
 
-## Dependencies
+### Storage Configuration
+- **In-memory limit**: 100 most recent webhooks
+- **File storage limit**: 1000 webhooks in `webhooks.jsonl`
+- **File format**: JSONL (one JSON object per line)
 
-- **express**: Web framework
-- **body-parser**: Request body parsing middleware
-- **localtunnel**: Public tunneling service
-- **axios**: HTTP client (installed but not currently used)
+### Tunnel Configuration
+- **Subdomain**: `respondio` (hardcoded)
+- **Retry logic**: Exponential backoff from 1s to 30s
+- **Stability check**: 5-second reset period after successful connection
 
-## Development Dependencies
+## 📦 Dependencies
 
-- **nodemon**: Auto-restart server during development
+### Runtime Dependencies
+- **express** (v4.18.2): Web framework
+- **body-parser** (v2.2.2): Request body parsing middleware
+- **localtunnel** (v2.0.2): Public tunneling service
+- **axios** (v1.13.4): HTTP client (available for future use)
 
-## Tunnel Features
+### Development Dependencies
+- **nodemon** (v3.0.1): Auto-restart server during development
 
-- Automatic reconnection with exponential backoff (1s to 30s)
-- Connection stability detection (5-second reset period)
-- Graceful tunnel cleanup on shutdown
-- Error handling and logging
+## 🔧 Usage Examples
 
-## Example Usage
-
-Start the server:
-```bash
-npm start
-```
-
-The server will output:
-```
-Server running on port 8080
-Creating tunnel, please wait... (attempt 1)
-Webhook Route: [POST] https://respondio.loca.lt/webhook
-```
-
-Send a test webhook:
+### Send a Test Webhook
 ```bash
 curl -X POST https://respondio.loca.lt/webhook \
   -H "Content-Type: application/json" \
-  -d '{"event": "test", "data": {"message": "hello"}}'
+  -H "X-Custom-Header: test-value" \
+  -d '{
+    "event": "user.created",
+    "data": {
+      "id": 123,
+      "email": "user@example.com",
+      "timestamp": "2024-01-01T12:00:00Z"
+    }
+  }'
 ```
 
-Server logs:
+### Webhook with Query Parameters
+```bash
+curl -X POST "https://respondio.loca.lt/webhook?source=github&action=push" \
+  -H "Content-Type: application/json" \
+  -d '{"repository": "my-repo", "branch": "main"}'
+```
+
+### Different HTTP Methods
+```bash
+# PUT request
+curl -X PUT https://respondio.loca.lt/webhook \
+  -H "Content-Type: application/json" \
+  -d '{"action": "update", "id": 456}'
+
+# GET request (with query params)
+curl -X GET "https://respondio.loca.lt/webhook?test=true&debug=1"
+
+# DELETE request
+curl -X DELETE https://respondio.loca.lt/webhook \
+  -H "Content-Type: application/json" \
+  -d '{"resource": "user", "id": 789}'
+```
+
+## 🛠️ Tunnel Features
+
+- **Automatic Reconnection**: Exponential backoff retry (1s → 30s max)
+- **Connection Monitoring**: Detects tunnel errors and unexpected closures
+- **Stability Detection**: Resets retry counter after 5 seconds of stable connection
+- **Graceful Cleanup**: Proper tunnel shutdown on process exit
+- **Error Logging**: Detailed error messages for troubleshooting
+
+## 📁 File Structure
+
+```
+webhook_server/
+├── app.js              # Main server application
+├── package.json        # Dependencies and scripts
+├── README.md          # This file
+├── webhooks.jsonl     # Persistent webhook storage (auto-created)
+└── public/
+    └── index.html     # Web dashboard
+```
+
+## 🔍 Server Logs
+
+When a webhook is received:
 ```
 Received webhook at 2024-01-01T12:00:00.000Z
+Headers: {
+  "content-type": "application/json",
+  "user-agent": "curl/7.64.1",
+  "host": "respondio.loca.lt"
+}
 Payload: {
   "event": "test",
   "data": {
@@ -107,3 +187,20 @@ Payload: {
   }
 }
 ```
+
+## 🚨 Troubleshooting
+
+### Tunnel Connection Issues
+- The server will automatically retry with increasing delays
+- Check your internet connection if tunnels fail repeatedly
+- Try changing the subdomain if the default is taken
+
+### Webhook Not Appearing
+- Verify the URL includes `/webhook` path
+- Check server console for error messages
+- Refresh the dashboard manually
+
+### Performance Issues
+- The server keeps only 100 webhooks in memory for performance
+- Older webhooks are archived to `webhooks.jsonl`
+- Consider increasing memory limit for high-volume scenarios
