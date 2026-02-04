@@ -125,8 +125,8 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 // Function to open browser
 function openBrowser(url) {
-  const start = (process.platform === 'darwin' ? 'open' : 
-                  process.platform === 'win32' ? 'start' : 'xdg-open');
+  const start = (process.platform === 'darwin' ? 'open' :
+    process.platform === 'win32' ? 'start' : 'xdg-open');
   exec(`${start} ${url}`, (error) => {
     if (error) {
       console.log(`Could not open browser automatically. Please visit: ${url}`);
@@ -171,7 +171,7 @@ async function connectOrRetryLoop() {
 
       tunnel = await createTunnelOnce();
       console.log(`Webhook Route: [POST] ${tunnel.url}/webhook`);
-      
+
       // Open browser to frontend automatically
       console.log(`Opening browser to webhook dashboard...`);
       openBrowser(tunnel.url);
